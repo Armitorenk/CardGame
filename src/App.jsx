@@ -20,14 +20,23 @@ function App() {
   const locked = useRef(false)
 
   const initGame = () => {
-    let deck = []
-    suits.forEach(s => ranks.forEach(r => deck.push({ suit: s, rank: r, id: `${s.name}-${r}` })))
+    const deck = []
+
+    ranks.forEach(rank => {
+      suits.forEach(suit => {
+        deck.push({ suit, rank, id: `${suit.name}-${rank}-${Math.random()}` })
+      })
+    })
+
     for (let i = deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [deck[i], deck[j]] = [deck[j], deck[i]]
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[deck[i], deck[j]] = [deck[j], deck[i]]
     }
-    const newGroups = []
-    for (let i = 0; i < 13; i++) newGroups.push(deck.slice(i * 4, i * 4 + 4))
+
+    const newGroups = Array.from({ length: 13 }, (_, i) =>
+      deck.slice(i * 4, i * 4 + 4)
+    )
+
     setGroups(newGroups)
     setRevealed(Array(13).fill(false))
     setSelected([])
@@ -43,6 +52,7 @@ function App() {
     if (locked.current) return
     if (!groups[idx] || groups[idx].length === 0) return
     if (revealed[idx]) return
+    if (selected.includes(idx)) return
 
     const newRevealed = [...revealed]
     newRevealed[idx] = true
@@ -57,7 +67,6 @@ function App() {
       setMoves(prev => prev + 1)
 
       if (groups[a][0].rank === groups[b][0].rank) {
-        // İkinci kartın flip animasyonu bittikten sonra match animasyonu başlasın
         setTimeout(() => {
           const newAnim = [...animations]
           newAnim[a] = 'match'
@@ -65,16 +74,22 @@ function App() {
           setAnimations(newAnim)
 
           setTimeout(() => {
-            const updatedGroups = groups.map((g, i) => (i === a || i === b) ? g.slice(1) : g)
+            const updatedGroups = groups.map((g, i) =>
+              i === a || i === b ? g.slice(1) : g
+            )
             setGroups(updatedGroups)
             setRevealed(Array(13).fill(false))
             setSelected([])
             setAnimations(Array(13).fill(null))
-            if (updatedGroups.every(g => g.length === 0)) setIsWon(true)
+
+            setGroups(updatedGroups)
+
+            if (updatedGroups.flat().length === 0) {
+              setIsWon(true)
+}
             locked.current = false
           }, 880)
         }, 620)
-
       } else {
         const newAnim = [...animations]
         newAnim[a] = 'mismatch'
@@ -109,12 +124,15 @@ function App() {
         <span>Moves: {moves}</span>
         <button className="restart-btn" onClick={initGame}>Restart</button>
       </div>
+
       <div className="board">
         {groups.map((group, idx) => {
           const card = group[0]
           const isRevealed = revealed[idx]
           const anim = animations[idx]
+
           if (!card) return <div key={idx} className="slot empty" />
+
           return (
             <div key={idx} className="slot">
               <div
@@ -144,6 +162,7 @@ function App() {
           )
         })}
       </div>
+
       {isWon && (
         <div className="overlay">
           <div className="win-box">
