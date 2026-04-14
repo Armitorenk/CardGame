@@ -1,14 +1,102 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
-const suits = [
-  { name: 'Hearts', symbol: '♥', color: 'red' },
-  { name: 'Diamonds', symbol: '♦', color: 'red' },
-  { name: 'Clubs', symbol: '♣', color: 'black' },
-  { name: 'Spades', symbol: '♠', color: 'black' }
-]
-
+const suits = ['H', 'D', 'C', 'S']
 const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
+
+function getCardImageUrl(rank, suit) {
+  const r = rank === '10' ? '0' : rank
+  return `https://deckofcardsapi.com/static/img/${r}${suit}.png`
+}
+
+function getCardBackUrl() {
+  return `https://deckofcardsapi.com/static/img/back.png`
+}
+
+function hasMatchingPair(groups) {
+  const topRanks = groups.filter(g => g.length > 0).map(g => g[0].rank)
+  const seen = new Set()
+  for (const r of topRanks) {
+    if (seen.has(r)) return true
+    seen.add(r)
+  }
+  return false
+}
+
+function isGameOver(groups) {
+  return groups.every(g => g.length === 0)
+}
+
+function buildSafeGroups() {
+  const deck = []
+  ranks.forEach(rank => {
+    suits.forEach(suit => {
+      deck.push({ suit, rank, id: `${suit}-${rank}-${Math.random()}` })
+    })
+  })
+
+  const shuffle = (arr) => {
+    const a = [...arr]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+  }
+
+  let attempts = 0
+  while (attempts < 1000) {
+    const shuffled = shuffle(deck)
+    const groups = Array.from({ length: 13 }, (_, i) =>
+      shuffled.slice(i * 4, i * 4 + 4)
+    )
+    if (hasMatchingPair(groups)) return groups
+    attempts++
+  }
+
+  const shuffled = shuffle(deck)
+  const groups = Array.from({ length: 13 }, (_, i) =>
+    shuffled.slice(i * 4, i * 4 + 4)
+  )
+  const rank0 = groups[0][0].rank
+  const matchIdx = groups[1].findIndex(c => c.rank === rank0)
+  if (matchIdx > 0) {
+    [groups[1][0], groups[1][matchIdx]] = [groups[1][matchIdx], groups[1][0]]
+  }
+  return groups
+}
+
+function reshuffleTopCards(currentGroups) {
+  const allCards = currentGroups.flat()
+  const shuffle = (arr) => {
+    const a = [...arr]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+  }
+
+  const nonEmptyIndices = currentGroups.reduce((acc, g, i) => {
+    if (g.length > 0) acc.push(i)
+    return acc
+  }, [])
+  const sizes = nonEmptyIndices.map(i => currentGroups[i].length)
+
+  let attempts = 0
+  while (attempts < 500) {
+    const shuffled = shuffle(allCards)
+    const newGroups = currentGroups.map(g => [...g])
+    let cursor = 0
+    nonEmptyIndices.forEach((gi, ni) => {
+      newGroups[gi] = shuffled.slice(cursor, cursor + sizes[ni])
+      cursor += sizes[ni]
+    })
+    if (hasMatchingPair(newGroups)) return newGroups
+    attempts++
+  }
+  return currentGroups
+}
 
 function App() {
   const [groups, setGroups] = useState([])
@@ -17,32 +105,18 @@ function App() {
   const [moves, setMoves] = useState(0)
   const [isWon, setIsWon] = useState(false)
   const [animations, setAnimations] = useState(Array(13).fill(null))
+  const [warning, setWarning] = useState(false)
   const locked = useRef(false)
 
   const initGame = () => {
-    const deck = []
-
-    ranks.forEach(rank => {
-      suits.forEach(suit => {
-        deck.push({ suit, rank, id: `${suit.name}-${rank}-${Math.random()}` })
-      })
-    })
-
-    for (let i = deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[deck[i], deck[j]] = [deck[j], deck[i]]
-    }
-
-    const newGroups = Array.from({ length: 13 }, (_, i) =>
-      deck.slice(i * 4, i * 4 + 4)
-    )
-
+    const newGroups = buildSafeGroups()
     setGroups(newGroups)
     setRevealed(Array(13).fill(false))
     setSelected([])
     setMoves(0)
     setIsWon(false)
     setAnimations(Array(13).fill(null))
+    setWarning(false)
     locked.current = false
   }
 
@@ -82,11 +156,19 @@ function App() {
             setSelected([])
             setAnimations(Array(13).fill(null))
 
-            setGroups(updatedGroups)
-
-            if (updatedGroups.flat().length === 0) {
+            if (isGameOver(updatedGroups)) {
               setIsWon(true)
-}
+              locked.current = false
+              return
+            }
+
+            if (!hasMatchingPair(updatedGroups)) {
+              const reshuffled = reshuffleTopCards(updatedGroups)
+              setGroups(reshuffled)
+              setWarning(true)
+              setTimeout(() => setWarning(false), 2500)
+            }
+
             locked.current = false
           }, 880)
         }, 620)
@@ -122,6 +204,7 @@ function App() {
       <h2>Playing Cards Matching Game</h2>
       <div className="header">
         <span>Moves: {moves}</span>
+        {warning && <span className="warning">♻️ Cards reshuffled — no match was available!</span>}
         <button className="restart-btn" onClick={initGame}>Restart</button>
       </div>
 
@@ -145,17 +228,15 @@ function App() {
                 ].filter(Boolean).join(' ')}
                 onClick={() => handleClick(idx)}
               >
-                <div className="card-face card-back" />
-                <div className={`card-face card-front ${card.suit.color}`}>
-                  <span className="corner top-left">
-                    <span className="rank">{card.rank}</span>
-                    <span className="suit-small">{card.suit.symbol}</span>
-                  </span>
-                  <span className="suit-center">{card.suit.symbol}</span>
-                  <span className="corner bottom-right">
-                    <span className="rank">{card.rank}</span>
-                    <span className="suit-small">{card.suit.symbol}</span>
-                  </span>
+                <div className="card-face card-back">
+                  <img src={getCardBackUrl()} alt="card back" draggable={false} />
+                </div>
+                <div className="card-face card-front">
+                  <img
+                    src={getCardImageUrl(card.rank, card.suit)}
+                    alt={`${card.rank} of ${card.suit}`}
+                    draggable={false}
+                  />
                 </div>
               </div>
             </div>
